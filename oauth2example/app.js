@@ -2,7 +2,7 @@
 
 var http = require('http');
 var port = process.env.PORT || 3000;
-var request = require('request');
+var fetch = require('node-fetch');
 var qs = require('querystring');
 var util = require('util');
 var bodyParser = require('body-parser');
@@ -75,7 +75,13 @@ app.get('/callback', function (req, res) {
     }
   };
 
-  request.post(postBody, function (e, r, data) {
+  fetch(postBody.url, {
+    method: 'POST',
+    headers: postBody.headers,
+    body: postBody.form,
+  })
+  .then(r => r.json())
+  .then(accessToken => {
     var accessToken = JSON.parse(r.body);
 
     // save the access token somewhere on behalf of the logged in user

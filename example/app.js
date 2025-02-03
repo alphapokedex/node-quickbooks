@@ -1,6 +1,6 @@
 var http       = require('http'),
     port       = process.env.PORT || 3000,
-    request    = require('request'),
+    fetch      = require('node-fetch'),
     qs         = require('querystring'),
     util       = require('util'),
     bodyParser = require('body-parser'),
@@ -65,7 +65,13 @@ app.get('/callback', function(req, res) {
       realmId:         req.query.realmId
     }
   }
-  request.post(postBody, function (e, r, data) {
+  fetch(postBody.url, {
+    method: 'POST',
+    headers: postBody.headers,
+    body: postBody.form,
+  })
+  .then(r => r.json())
+  .then(accessToken => {
     var accessToken = qs.parse(data)
     console.log(accessToken)
     console.log(postBody.oauth.realmId)
