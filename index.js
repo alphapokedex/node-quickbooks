@@ -6,9 +6,9 @@
  * @copyright 2014 Michael Cohen
  */
 
-var request   = require('request'),
+var axios   = require('axios'),
     uuid      = require('uuid'),
-    debug     = require('request-debug'),
+    initiateDebug     = require('axios-debug'),
     util      = require('util'),
     formatISO = require('date-fns/fp/formatISO'),
     _         = require('underscore'),
@@ -37,29 +37,22 @@ var OAUTH_ENDPOINTS = {
 
   '2.0': function (callback, discoveryUrl) {
     var NEW_ENDPOINT_CONFIGURATION = {};
-    request({
-      url: discoveryUrl,
+    axios(discoveryUrl, {
       headers: {
         Accept: 'application/json'
       }
-    }, function (err, res) {
-      if (err) {
-        console.log(err);
-        return err;
-      }
-
-      var json;
-      try {
-          json = JSON.parse(res.body);
-      } catch (error) {
-          console.log(error);
-          return error;
-      }
-      NEW_ENDPOINT_CONFIGURATION.AUTHORIZATION_URL = json.authorization_endpoint;;
+    })
+    .then(res => res.data)
+    .then(json => {
+      NEW_ENDPOINT_CONFIGURATION.AUTHORIZATION_URL = json.authorization_endpoint;
       NEW_ENDPOINT_CONFIGURATION.TOKEN_URL = json.token_endpoint;
       NEW_ENDPOINT_CONFIGURATION.USER_INFO_URL = json.userinfo_endpoint;
       NEW_ENDPOINT_CONFIGURATION.REVOKE_URL = json.revocation_endpoint;
       callback(NEW_ENDPOINT_CONFIGURATION);
+    })
+    .catch(err => {
+      console.log(err);
+      return err;
     });
   }
 };
@@ -127,31 +120,32 @@ function QuickBooks(consumerKey, consumerSecret, token, tokenSecret, realmId, us
  */
 
 QuickBooks.prototype.refreshAccessToken = function(callback) {
-    var auth = (Buffer.from(this.consumerKey + ':' + this.consumerSecret).toString('base64'));
+  var auth = (Buffer.from(this.consumerKey + ':' + this.consumerSecret).toString('base64'));
 
-    var postBody = {
-        url: QuickBooks.TOKEN_URL,
-        headers: {
-            Accept: 'application/json',
-            'Content-Type': 'application/x-www-form-urlencoded',
-            Authorization: 'Basic ' + auth,
-        },
-        form: {
-            grant_type: 'refresh_token',
-            refresh_token: this.refreshToken
-        }
-    };
-
-    request.post(postBody, (function (e, r, data) {
-        if (r && r.body && r.error!=="invalid_grant") {
-            var refreshResponse = JSON.parse(r.body);
-            this.refreshToken = refreshResponse.refresh_token;
-            this.token = refreshResponse.access_token;
-            if (callback) callback(e, refreshResponse);
-        } else {
-            if (callback) callback(e, r, data);
-        }
-    }).bind(this));
+  axios.post(QuickBooks.TOKEN_URL, {
+    headers: {
+      Accept: 'application/json',
+      'Content-Type': 'application/x-www-form-urlencoded',
+      Authorization: 'Basic ' + auth,
+    },
+    body: new URLSearchParams({
+      grant_type: 'refresh_token',
+      refresh_token: this.refreshToken
+    })
+  })
+  .then(res => res.data.json())
+  .then(refreshResponse => {
+    if (refreshResponse && !refreshResponse.error) {
+      this.refreshToken = refreshResponse.refresh_token;
+      this.token = refreshResponse.access_token;
+      if (callback) callback(null, refreshResponse);
+    } else {
+      if (callback) callback(refreshResponse.error, refreshResponse);
+    }
+  })
+  .catch(e => {
+    if (callback) callback(e);
+  });
 };
 
 /**
@@ -161,28 +155,33 @@ QuickBooks.prototype.refreshAccessToken = function(callback) {
  * @param {function} callback - Callback function to call with error/response/data results.
  */
 QuickBooks.prototype.revokeAccess = function(useRefresh, callback) {
-    var auth = (Buffer.from(this.consumerKey + ':' + this.consumerSecret).toString('base64'));
-    var revokeToken = useRefresh ? this.refreshToken : this.token;
-    var postBody = {
-        url: QuickBooks.REVOKE_URL,
-        headers: {
-            Accept: 'application/json',
-            'Content-Type': 'application/x-www-form-urlencoded',
-            Authorization: 'Basic ' + auth,
-        },
-        form: {
-            token: revokeToken
-        }
-    };
-
-    request.post(postBody, (function(e, r, data) {
-        if (r && r.statusCode === 200) {
-            this.refreshToken = null;
-            this.token = null;
-            this.realmId = null;
-        }
-        if (callback) callback(e, r, data);
-    }).bind(this));
+  var auth = (Buffer.from(this.consumerKey + ':' + this.consumerSecret).toString('base64'));
+  var revokeToken = useRefresh ? this.refreshToken : this.token;
+  
+  axios.post(QuickBooks.REVOKE_URL, {
+    headers: {
+      Accept: 'application/json',
+      'Content-Type': 'application/x-www-form-urlencoded', 
+      Authorization: 'Basic ' + auth,
+    },
+    body: new URLSearchParams({
+      token: revokeToken
+    })
+  })
+  .then(res => {
+    if (res.status === 200) {
+      this.refreshToken = null;
+      this.token = null;
+      this.realmId = null;
+    }
+    return res.data.text();
+  })
+  .then(data => {
+    if (callback) callback(null, {statusCode: 200}, data);
+  })
+  .catch(e => {
+    if (callback) callback(e);
+  });
 };
 
 /**
@@ -703,7 +702,7 @@ QuickBooks.prototype.getEstimate = function(id, callback) {
  */
 QuickBooks.prototype.getExchangeRate = function(options, callback) {
   var url = "/exchangerate";
-  module.request(this, 'get', {url: url, qs: options}, null, callback)
+  module.request(this, 'get', {url: url, params: options}, null, callback)
 }
 
 
@@ -2342,7 +2341,8 @@ module.request = function(context, verb, options, entity, callback) {
   }
   var opts = {
     url:     url,
-    qs:      options.qs || {},
+    method:  verb,
+    params:      options.qs || {},
     headers: options.headers || {},
     json:    true
   }
@@ -2377,9 +2377,9 @@ module.request = function(context, verb, options, entity, callback) {
     opts.formData = options.formData
   }
   if ('production' !== process.env.NODE_ENV && context.debug) {
-    debug(request)
+    initiateDebug(axios)
   }
-  request[verb].call(context, opts, function (err, res, body) {
+  axios.request(opts).then(function (err, res, body) {
     if ('production' !== process.env.NODE_ENV && context.debug) {
       console.log('invoking endpoint: ' + url)
       console.log(entity || '')
