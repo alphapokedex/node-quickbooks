@@ -133,7 +133,7 @@ QuickBooks.prototype.refreshAccessToken = function(callback) {
       refresh_token: this.refreshToken
     })
   })
-  .then(res => res.data.json())
+  .then(res => res.data)
   .then(refreshResponse => {
     if (refreshResponse && !refreshResponse.error) {
       this.refreshToken = refreshResponse.refresh_token;
@@ -174,7 +174,7 @@ QuickBooks.prototype.revokeAccess = function(useRefresh, callback) {
       this.token = null;
       this.realmId = null;
     }
-    return res.data.text();
+    return res.data;
   })
   .then(data => {
     if (callback) callback(null, {statusCode: 200}, data);
@@ -2379,21 +2379,27 @@ module.request = function(context, verb, options, entity, callback) {
   if ('production' !== process.env.NODE_ENV && context.debug) {
     initiateDebug(axios)
   }
-  axios.request(opts).then(function (err, res, body) {
+  axios.request(opts).then(res => {
+    const data = res.data;
+    const url = res.config.url;
+    const statusCode = res.statusCode;
     if ('production' !== process.env.NODE_ENV && context.debug) {
       console.log('invoking endpoint: ' + url)
       console.log(entity || '')
-      console.log(JSON.stringify(body, null, 2));
+      console.log(JSON.stringify(data, null, 2));
     }
     if (callback) {
-      if (err ||
-          res.statusCode >= 300 ||
-          (_.isObject(body) && body.Fault && body.Fault.Error && body.Fault.Error.length) ||
-          (_.isString(body) && !_.isEmpty(body) && body.indexOf('<') === 0)) {
-        callback(err || body, body, res)
+      if (statusCode >= 300 ||
+          (_.isObject(data) && data.Fault && data.Fault.Error && data.Fault.Error.length) ||
+          (_.isString(data) && !_.isEmpty(data) && data.indexOf('<') === 0)) {
+        callback(err || data, data, res)
       } else {
-        callback(null, body, res)
+        callback(null, data, res)
       }
+    }
+  }).catch((err) => {
+    if (callback) {
+      callback(err, null, null)
     }
   })
 }
