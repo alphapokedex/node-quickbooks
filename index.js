@@ -2342,25 +2342,25 @@ module.request = function(context, verb, options, entity, callback) {
   var opts = {
     url:     url,
     method:  verb,
-    params:      options.qs || {},
+    params:  options.qs || {},
     headers: options.headers || {},
     json:    true
   }
 
   if (entity && entity.allowDuplicateDocNum) {
     delete entity.allowDuplicateDocNum;
-    opts.qs.include = 'allowduplicatedocnum';
+    opts.params.include = 'allowduplicatedocnum';
   }
 
   if (entity && entity.requestId) {
-    opts.qs.requestid = entity.requestId;
+    opts.params.requestid = entity.requestId;
     delete entity.requestId;
   }
 
-  opts.qs.minorversion = opts.qs.minorversion || context.minorversion;
+  opts.params.minorversion = opts.params.minorversion || context.minorversion;
   opts.headers['User-Agent'] = 'node-quickbooks: version ' + version
   opts.headers['Request-Id'] = uuid.v1()
-  opts.qs.format = 'json';
+  opts.params.format = 'json';
   if (context.oauthversion == '2.0'){
       opts.headers['Authorization'] =  'Bearer ' + context.token
   } else {
